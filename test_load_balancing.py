@@ -6,8 +6,22 @@ Tests that Kubernetes is distributing requests across multiple pods
 import requests
 import time
 from collections import Counter
+import argparse
 
-SERVICE_URL = "http://127.0.0.1:63501/info"
+# -------------------------------
+# Argument parsing
+# -------------------------------
+parser = argparse.ArgumentParser(description="Load balancing test script")
+parser.add_argument(
+    "--port",
+    type=int,
+    required=True,
+    help="Port where the service is exposed"
+)
+
+args = parser.parse_args()
+
+SERVICE_URL = f"http://127.0.0.1:{args.port}/info"
 NUM_REQUESTS = 20
 
 print(f"🚀 Testing load balancing across pods...")

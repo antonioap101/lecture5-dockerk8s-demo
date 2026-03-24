@@ -1,3 +1,509 @@
+# Repository Link
+
+> [https://github.com/antonioap101/lecture5-dockerk8s-demo](https://github.com/antonioap101/lecture5-dockerk8s-demo)
+
+---
+
+# Exercise 5: Docker & Kubernetes for Scalable Deployment
+
+> DevOps for Cyber-Physical Systems (HS 2026), University of Bern
+
+---
+
+## Task 1: Modify the Docker Setup
+
+### 1a) Add Adminer Service
+
+#### Changes I made
+
+Added a new service `adminer` to `docker-compose.yml`:
+
+```yaml
+adminer:
+  image: adminer:latest
+  container_name: lecture5-adminer
+  ports:
+    - "8080:8080"
+  environment:
+    - ADMINER_DEFAULT_SERVER=db
+  depends_on:
+    db:
+      condition: service_healthy
+  networks:
+    - app-network
+  restart: unless-stopped
+```
+
+---
+
+### Explanation
+
+* Uses the official `adminer:latest` image
+* Exposed on port `8080`
+* Connected to the same Docker network (`app-network`)
+* Configured to connect to PostgreSQL via the `db` service
+* `depends_on` ensures the database is ready before Adminer starts
+
+---
+
+### Testing
+
+Steps performed:
+
+```bash
+docker compose up -d
+```
+
+Accessed:
+
+```
+http://localhost:8080
+```
+
+Login credentials:
+
+* System: PostgreSQL
+* Server: db
+* Username: taskuser
+* Password: taskpass
+* Database: taskdb
+
+---
+
+### Result
+
+* Successfully connected to PostgreSQL
+* Verified existence of the `tasks` table
+* Data becomes visible after inserting tasks via the web application
+
+<div align="center">
+  <img src="screenshots/1a-admirer-tasks-table.png" alt="Adminer Tasks Table" width="800"/>
+  <p><em>Adminer interface displaying the tasks table</em></p>
+</div>
+
+<div align="center">
+  <img src="screenshots/1a-task-manager-added-task.png" alt="Web App Task View" width="800"/>
+  <p><em>Web application interface showing the created task</em></p>
+</div>
+
+---
+
+## (b) Change Base Image (Slim → Alpine)
+
+
+### Changes made
+
+Modified the base image in the `Dockerfile`:
+
+```dockerfile
+FROM python:3.11-alpine
+```
+
+---
+
+### a) Required changes to make Alpine work
+
+No additional system dependencies were required in this specific case.
+
+Reason:
+
+* The package `psycopg2-binary` provides **precompiled musl-compatible wheels**
+* pip installed a binary wheel instead of compiling from source
+
+However, in general, Alpine images often require installing additional system and build dependencies due to the absence of glibc and the need to compile native extension, which would be fixed by adding:
+
+```bash
+apk add gcc musl-dev libpq-dev
+```
+
+if precompiled wheels are not available.
+
+---
+
+
+### b) Build both images
+
+#### Build slim image
+
+```bash
+docker build --no-cache -t task-app:slim .
+```
+
+<div align="center">
+  <img src="screenshots/1b-docker-build-python-slim.png" alt="Build slim image" width="800"/>
+  <p><em>Building the slim-based Docker image</em></p>
+</div>
+
+
+#### Build Alpine image
+
+```bash
+docker build --no-cache -t task-app:alpine .
+```
+
+<div align="center">
+  <img src="screenshots/1b-docker-build-python-alpine.png" alt="Build alpine image" width="800"/>
+  <p><em>Building the Alpine-based Docker image</em></p>
+</div>
+
+---
+
+### c) Size comparison and build observations
+
+#### Without additional Alpine dependencies (`apk add`)
+
+| IMAGE             | ID           | DISK USAGE | CONTENT SIZE | EXTRA |
+|------------------|-------------|------------|--------------|-------|
+| task-app:alpine  | f1ea872c186e | 127MB      | 31MB         |       |
+| task-app:slim    | 3f6767428475 | 232MB      | 56.6MB       |       |
+
+<div align="center">
+  <img src="screenshots/1b-docker-images-no-apk.png" alt="Image sizes without apk add" width="800"/>
+  <p><em>Image size comparison without additional Alpine dependencies</em></p>
+</div>
+
+---
+
+#### With additional Alpine dependencies (`apk add gcc musl-dev libpq-dev`)
+
+| IMAGE             | ID           | DISK USAGE | CONTENT SIZE | EXTRA |
+|------------------|-------------|------------|--------------|-------|
+| task-app:alpine  | fffd3a0e12ec | 410MB      | 107MB        |       |
+| task-app:slim    | 3f6767428475 | 232MB      | 56.6MB       |       |
+
+<div align="center">
+  <img src="screenshots/1b-docker-images-with-apk.png" alt="Image sizes with apk add" width="800"/>
+  <p><em>Image size comparison after installing build dependencies in Alpine</em></p>
+</div>
+
+---
+
+### Observations
+
+- The Alpine image without additional dependencies is significantly smaller than the slim version.
+- When installing build dependencies (`gcc`, `musl-dev`, `libpq-dev`), the Alpine image becomes substantially larger than the slim image.
+- This demonstrates that Alpine's size advantage depends on avoiding compilation toolchains.
+
+In conclusion, although no changes were required in this case due to the **availability of precompiled wheels**, Alpine images can require additional system dependencies in many other scenarios. When such dependencies are needed, the **resulting image size can exceed that of the slim-based image**, reducing or eliminating the expected size benefit.
+
+---
+
+# Task 2: Docker Operations
+
+## (a) Image Tagging and Registry
+
+### a) Build the image with a version tag
+
+The Docker image was built using a version tag, and was later tagged with my Docker Hub username.
+
+```bash
+docker build -t task-app:v1.0 .
+docker tag task-app:v1.0 aagdockerdev/task-app:v1.0
+```
+
+<div align="center">
+  <img src="screenshots/2a-a-build-docker-image-with-tag-v1.0.png" alt="Building Docker image with version tag" width="800"/>
+  <p><em>Building the Docker image with version tag v1.0 and tagging the image with Docker Hub username</em></p>
+</div>
+
+### b) Create a Docker Hub account and push the image
+
+I already had a Docker Hub account, where the image was pushed to the registry.
+
+
+##### Docker Hub Username
+
+> aagdockerdev
+
+Then, authentication was performed:
+
+```bash
+docker login
+```
+<div align="center">
+  <img src="screenshots/2a-a-docker-login.png" alt="Pushing image to Docker Hub" width="800"/>
+  <p><em>Logging in to Docker Hub account</em></p>
+</div>
+
+
+Finally, the image was pushed:
+
+```bash
+docker push aagdockerdev/task-app:v1.0
+```
+
+<div align="center">
+  <img src="screenshots/2a-a-docker-push.png" alt="Pushing image to Docker Hub" width="800"/>
+  <p><em>Pushing the Docker image to Docker Hub</em></p>
+</div>
+
+---
+
+### c) Verification on Docker Hub
+
+The uploaded image was verified on Docker Hub, confirming that the repository and tagged version were successfully published.
+
+<div align="center">
+  <img src="screenshots/2a-c-image-pushed-to-docker-hub.png" alt="Docker Hub repository with uploaded image" width="800"/>
+  <p><em>Docker Hub repository showing the uploaded image (v1.0)</em></p>
+</div>
+
+
+---
+
+## (b) Container Inspection
+
+With the application running, the following commands were used to inspect container behavior and state.
+
+### 1. View container logs
+
+```bash
+docker compose logs web
+```
+
+**Explanation:**
+
+This command displays the logs generated by the `web` service container. It is useful for debugging, monitoring application output, and verifying that the application started correctly.
+
+<div align="center">
+  <img src="screenshots/2b-logs-web.png" alt="Docker compose logs for web service" width="800"/>
+  <p><em>Logs of the web container showing application output</em></p>
+</div>
+
+### 2. Inspect container details
+
+```bash
+docker inspect lecture5-web
+```
+
+**Explanation:**
+
+This command returns detailed low-level information about the container in JSON format, including configuration, environment variables, network settings, mounted volumes, and runtime state.
+
+<div align="center">
+  <img src="screenshots/2b-docker-inspect-web.png" alt="Docker inspect output" width="800"/>
+  <p><em>Detailed container configuration and metadata from docker inspect</em></p>
+</div>
+
+
+### 3. Monitor container resource usage
+
+```bash
+docker stats
+```
+
+**Explanation:**
+
+This command provides real-time metrics for running containers, including CPU usage, memory consumption, network I/O, and block I/O. It is useful for monitoring performance and detecting resource bottlenecks.
+
+<div align="center">
+    <img src="screenshots/2b-docker-stats.png" alt="Docker stats output" width="800"/>
+  <p><em>Real-time resource usage statistics of running containers</em></p>
+</div>
+
+---
+
+# Task 3: Deploy to Kubernetes
+
+---
+
+## (a) Deploy the Application
+
+### a) Start Minikube
+
+The Kubernetes cluster was started locally using Minikube:
+
+```bash
+minikube start
+```
+
+<div align="center">
+  <img src="screenshots/3a-a-minikube-start.png" alt="Starting Minikube cluster" width="800"/>
+  <p><em>Minikube cluster initialization</em></p>
+</div>
+
+---
+
+### b) Deploy backend and web services
+
+The backend (PostgreSQL + Redis) and the web application were deployed using the provided Kubernetes manifests:
+
+```bash
+kubectl apply -f k8s-backend.yaml
+kubectl apply -f k8s-web.yaml
+```
+
+<div align="center">
+  <img src="screenshots/3a-b-deploy-apply-commands.png" alt="Applying Kubernetes manifests" width="800"/>
+  <p><em>Deploying backend and web services to Kubernetes</em></p>
+</div>
+
+---
+
+### c) Build Docker image
+
+The application image was built with my Docker Hub username:
+
+```bash
+docker build -t aagdockerdev/lecture5-webapp:v1.0 .
+```
+
+<div align="center">
+  <img src="screenshots/3a-c-build-image.png" alt="Building Docker image for Kubernetes" width="800"/>
+  <p><em>Building Docker image for deployment</em></p>
+</div>
+
+---
+
+### d) Push image and update Kubernetes configuration
+
+The image was pushed to Docker Hub:
+
+```bash
+docker push aagdockerdev/lecture5-webapp:v1.0
+```
+
+Then, the image field in `k8s-web.yaml` was updated:
+
+```yaml
+image: aagdockerdev/lecture5-webapp:v1.0
+```
+
+<div align="center">
+  <img src="screenshots/3a-d-docker-push.png" alt="Pushing image to Docker Hub" width="800"/>
+  <p><em>Pushing the image to Docker Hub</em></p>
+</div>
+
+---
+
+### e) Access the application
+
+The application was accessed using:
+
+```bash
+minikube service lecture5-web-service
+```
+
+This command exposes the service and opens it in the browser.
+
+<div align="center">
+  <img src="screenshots/3a-e-minikube-service.png" alt="Accessing service via Minikube" width="800"/>
+  <p><em>Accessing the deployed service through Minikube</em></p>
+</div>
+
+---
+
+### f) Verification
+
+The running pods were verified using the following command:
+
+```bash
+kubectl get pods
+```
+
+<div align="center">
+  <img src="screenshots/3a-f-get-pods.png" alt="Kubernetes pods running" width="800"/>
+  <p><em>Running pods in the Kubernetes cluster</em></p>
+</div>
+
+
+Additionally, the application was successfully deployed and accessible in the browser:
+
+<div align="center">
+  <img src="screenshots/3a-f-browser-running.png" alt="Application running in browser" width="800"/>
+  <p><em>Web application running in the browser with tasks displayed</em></p>
+</div>
+---
+
+
+## (b) Scale and Test Load Balancing
+
+### a) Scale the deployment to 5 replicas
+
+The number of replicas of the web application was increased to 5:
+
+```bash
+kubectl scale deployment lecture5-web --replicas=5
+kubectl get pods
+```
+
+<div align="center">
+  <img src="screenshots/3b-a-scale-and-check-pods.png" alt="Scaling deployment to 5 replicas" width="800"/>
+  <p><em>Scaling the web deployment to 5 replicas, and checking afterwards with the number of pods</em></p>
+</div>
+
+---
+
+### b, c) Run load balancing test and results
+
+The provided script was slightly modified to accept the service port as a command-line argument. This was necessary because Minikube dynamically assigns a local port when exposing services via `minikube service`. The script was executed to simulate multiple requests:
+
+```bash
+python test_load_balancing.py --port 54595
+```
+
+<div align="center">
+  <img src="screenshots/3b-c-load-balancing.png" alt="Load balancing test execution" width="800"/>
+  <p><em>Executing load balancing test script</em></p>
+</div>
+
+The output shows that requests are distributed across multiple pods, confirming that load balancing is functioning correctly. Each request is served by a different pod instance, identified by its unique hostname (e.g., `lecture5-web-648b966c4c-7ls9f`).
+
+A total of 20 requests were sent, and all 5 replicas handled traffic. The distribution is not perfectly uniform, which is expected due to the probabilistic nature of request routing, but all pods received at least one request. This demonstrates that the Kubernetes Service is correctly balancing traffic across available replicas.
+
+---
+
+### d) Explanation: How Kubernetes distributes traffic
+
+Kubernetes distributes incoming traffic through a Service, which acts as a **stable endpoint and load balances requests** across all healthy pods that match its selector. The Service relies on **kube-proxy** to forward traffic at the network level, typically resulting in an approximately even distribution (often perceived as round-robin) across replicas. In this setup, the **LoadBalancer** service exposed via Minikube **forwards requests to the backend pods**, ensuring scalability and fault tolerance even if individual pods fail.
+
+---
+
+## (c) Self-Healing
+
+### a,b) Delete a pod and observe pod reaction
+
+A running pod was manually deleted:
+
+```bash
+kubectl delete pod lecture5-web-648b966c4c-7ls9f
+```
+
+And the cluster state was monitored repeatedly:
+
+```bash
+kubectl get pods
+```
+
+
+<div align="center">
+  <img src="screenshots/3c-a-deleting-multiple-pods.png" alt="Deleting a pod" width="800"/>
+  <p><em>Deleting one of the running web pods multiple times. Pods before, during and after deletion each time</em></p>
+</div>
+
+
+### Observations
+
+After each pod deletion, a new pod with a different name (e.g., `jlgcj`, `xkbsd`, `5jwwp`) is created almost immediately. The AGE field confirms that these are newly created instances (e.g., a few seconds old), while the total number of running pods remains constant at 5.
+
+This demonstrates that the Deployment controller continuously monitors the cluster state and ensures that the desired number of replicas is maintained, replacing any terminated pod automatically.
+
+
+### c) Explanation: Why self-healing is important
+
+Kubernetes ensures that the **desired state defined in a Deployment** is **continuously maintained**. When a pod is deleted or fails, the controller automatically creates a new one to replace it. This self-healing capability guarantees **high availability and resilience**, allowing applications to recover from failures autonomously, without manual intervention.
+
+
+<!-- ################################################ -->
+<!-- ################################################ -->
+<!-- ############## OLD README CONTENT ############## -->
+<!-- ################################################ -->
+<!-- ################################################ -->
+
+<hr style="border: none; height: 3px; background-color: #444;">
+
+# OLD README.md content
+
 # Lecture 5: Docker & Kubernetes Demo
 
 > DevOps for Cyber-Physical Systems | University of Bern
